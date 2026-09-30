@@ -55,6 +55,16 @@ dialog::backdrop{background:rgba(17,24,39,.4)}
 dialog h2{margin:0 0 12px;font-size:16px}
 dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:'JetBrains Mono',monospace;font-size:13px}
 .row{display:flex;gap:8px;justify-content:flex-start;margin-top:16px}
+
+.runpanel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.runrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.runrow .lbl{font-weight:700;font-size:13px;margin-inline-end:4px}
+.chip{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:5px 12px;cursor:pointer;direction:ltr;font-family:'JetBrains Mono',monospace;font-size:12px}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+#fnName{direction:ltr;text-align:left;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:var(--paper);font-family:'JetBrains Mono',monospace;font-size:12px;width:150px}
+.runout{margin:0;background:var(--code-bg);color:var(--code-ink);border-radius:8px;padding:10px 12px;max-height:150px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;direction:rtl;text-align:right;min-height:40px}
+.runout.err{color:#ffb4a9}
 @media(max-width:760px){main{flex-direction:column}aside{width:auto;max-height:46%;border-inline-end:0;border-bottom:1px solid var(--line)}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -90,6 +100,17 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
       <button class="btn primary" id="btnSave" disabled>שמירה ב-Apps Script</button>
     </div>
     <div class="editor hide" id="editor"><textarea id="code" spellcheck="false" aria-label="עורך קוד"></textarea></div>
+    <div class="runpanel hide" id="runpanel">
+      <div class="runrow">
+        <span class="lbl">הרצת פונקציה בשרת</span>
+        <button class="chip on" data-fn="backfill">backfill</button>
+        <button class="chip" data-fn="fetchNewMessages">fetchNewMessages</button>
+        <button class="chip" data-fn="installTrigger">installTrigger</button>
+        <input id="fnName" value="backfill" autocomplete="off" spellcheck="false" aria-label="שם פונקציה">
+        <button class="btn primary" id="btnRun">הרצה</button>
+      </div>
+      <pre class="runout" id="runOut">התוצאה תופיע כאן.</pre>
+    </div>
   </section>
 </main>
 
@@ -104,7 +125,12 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
 
 <script>
 (function(){
-  var SCOPE = 'https://www.googleapis.com/auth/script.projects';
+  var SCOPE = [
+    'https://www.googleapis.com/auth/script.projects',
+    'https://www.googleapis.com/auth/spreadsheets',
+    'https://www.googleapis.com/auth/script.external_request',
+    'https://www.googleapis.com/auth/script.scriptapp'
+  ].join(' ');
   var API = 'https://script.googleapis.com/v1/projects/';
   var $ = function(id){ return document.getElementById(id); };
   var token = null, tokenClient = null;
@@ -143,6 +169,7 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
         status('מחובר');
         $('btnAuth').textContent = 'התחברות מחדש';
         $('btnLoad').disabled = false;
+        $('runpanel').classList.remove('hide');
       }
     });
     return true;
@@ -283,6 +310,58 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
     $('code').focus();
   };
   $('newName').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('newOk').click(); });
+
+
+  // ===== הרצת פונקציה דרך Apps Script API (scripts.run) =====
+  function runOut(text, isErr){ var o = $('runOut'); o.textContent = text; o.className = 'runout' + (isErr ? ' err' : ''); }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(c){
+    c.onclick = function(){
+      $('fnName').value = c.getAttribute('data-fn');
+      Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(x){ x.classList.toggle('on', x === c); });
+    };
+  });
+
+  function runFn(){
+    var sid = $('scriptId').value.trim();
+    var fn = $('fnName').value.trim();
+    if (!sid || !fn){ runOut('הזן Script ID ושם פונקציה', true); return; }
+    if (structural || Object.keys(dirty).length){ runOut('יש שינויים שלא נשמרו. שמור קודם, כי ההרצה משתמשת בגרסה האחרונה שנשמרה.', true); return; }
+    $('btnRun').disabled = true;
+    runOut('מריץ ' + fn + '... זה יכול לקחת עד כמה דקות.');
+    status('מריץ ' + fn + '...');
+    fetch('https://script.googleapis.com/v1/scripts/' + encodeURIComponent(sid) + ':run', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 'function': fn, devMode: true })
+    }).then(function(r){
+      return r.json().then(function(j){ return { ok: r.ok, code: r.status, j: j }; });
+    }).then(function(res){
+      var j = res.j;
+      if (!res.ok){
+        var m = (j.error && j.error.message) || ('שגיאה ' + res.code);
+        var hint = '';
+        if (res.code === 404) hint = '\nייתכן שהסקריפט עדיין לא מקושר לפרויקט הענן של ה-Client ID, או שמזהה הסקריפט שגוי.';
+        if (res.code === 403) hint = '\nבדוק שההרשאות (scopes) ב-appsscript.json תואמות לאלה שהדף מבקש, ושה-Apps Script API פעיל בפרויקט הענן.';
+        runOut(m + hint, true); status('ההרצה נכשלה', true); return;
+      }
+      if (j.error){
+        var d = (j.error.details && j.error.details[0]) || {};
+        var t = d.errorMessage || j.error.message || 'שגיאה בהרצה';
+        if (d.scriptStackTraceElements){
+          t += '\n' + d.scriptStackTraceElements.map(function(s){ return s['function'] + ':' + s.lineNumber; }).join('\n');
+        }
+        runOut(t, true); status('הפונקציה החזירה שגיאה', true); return;
+      }
+      var val = j.response && j.response.result;
+      runOut('הסתיים בהצלחה' + (val !== undefined && val !== null ? '\n' + (typeof val === 'string' ? val : JSON.stringify(val)) : ''));
+      status('ההרצה הסתיימה');
+    }).catch(function(e){
+      runOut('הבקשה לא הגיעה ליעד: ' + e.message + '\nייתכן שהיא נחסמה על ידי מסנן תוכן.', true);
+      status('ההרצה נכשלה', true);
+    }).then(function(){ $('btnRun').disabled = false; });
+  }
+  $('btnRun').onclick = runFn;
 
   $('btnLoad').onclick = load;
   $('btnReload').onclick = function(){
