@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>עורך Apps Script</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+:root{
+  --ink:#1b2230; --muted:#667085; --paper:#f4f5f7; --surface:#ffffff; --line:#e1e4ea;
+  --accent:#0e6b62; --accent-ink:#ffffff; --accent-soft:#e3f2f0; --danger:#b42318; --code-bg:#12161f; --code-ink:#e6e9ef;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:'Heebo',system-ui,sans-serif;background:var(--paper);color:var(--ink);display:flex;flex-direction:column;font-size:15px}
+button,input{font:inherit;color:inherit}
+header{display:flex;align-items:center;gap:16px;padding:12px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+header h1{font-size:17px;margin:0;font-weight:700}
+.status{margin-inline-start:auto;color:var(--muted);font-size:13px}
+.status.err{color:var(--danger)}
+.btn{border:1px solid var(--line);background:var(--surface);padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:500;transition:background .15s,border-color .15s}
+.btn:hover:not(:disabled){background:var(--paper);border-color:#cdd2db}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){background:#0b5a52;border-color:#0b5a52}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible,textarea:focus-visible,.file:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{flex:1;display:flex;min-height:0}
+aside{width:290px;background:var(--surface);border-inline-end:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.setup{padding:16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.setup label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+.setup input{direction:ltr;text-align:left;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);font-family:'JetBrains Mono',monospace;font-size:12px}
+.files-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 6px;font-weight:700;font-size:13px;color:var(--muted)}
+.files{flex:1;overflow:auto;padding:4px 8px 12px}
+.file{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;border:0;background:none;width:100%;text-align:right}
+.file:hover{background:var(--paper)}
+.file.active{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.file .nm{flex:1;direction:ltr;text-align:right;font-family:'JetBrains Mono',monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file .dot{width:7px;height:7px;border-radius:50%;background:#d9822b;visibility:hidden}
+.file.dirty .dot{visibility:visible}
+.icon{border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 8px;border-radius:6px;font-size:12px}
+.icon:hover{background:var(--line);color:var(--danger)}
+.stage{flex:1;display:flex;flex-direction:column;min-width:0;padding:16px;gap:12px}
+.bar{display:flex;align-items:center;gap:10px}
+.bar .title{font-family:'JetBrains Mono',monospace;direction:ltr;font-size:13px;color:var(--muted)}
+.bar .spacer{flex:1}
+.editor{flex:1;min-height:0;border-radius:12px;overflow:hidden;background:var(--code-bg);display:flex}
+textarea{flex:1;border:0;resize:none;background:transparent;color:var(--code-ink);padding:18px 20px;direction:ltr;text-align:left;font-family:'JetBrains Mono',monospace;font-size:13.5px;line-height:1.65;tab-size:2;white-space:pre;overflow:auto}
+textarea:focus{outline:none}
+.empty{flex:1;display:grid;place-items:center;color:var(--muted);text-align:center;padding:24px;line-height:1.8}
+.hide{display:none!important}
+dialog{border:0;border-radius:14px;padding:22px;width:min(380px,92vw);box-shadow:0 20px 50px rgba(17,24,39,.25);font-family:inherit;color:var(--ink)}
+dialog::backdrop{background:rgba(17,24,39,.4)}
+dialog h2{margin:0 0 12px;font-size:16px}
+dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-family:'JetBrains Mono',monospace;font-size:13px}
+.row{display:flex;gap:8px;justify-content:flex-start;margin-top:16px}
+@media(max-width:760px){main{flex-direction:column}aside{width:auto;max-height:46%;border-inline-end:0;border-bottom:1px solid var(--line)}}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>עורך Apps Script</h1>
+  <span id="status" class="status">לא מחובר</span>
+  <button class="btn" id="btnAuth">התחברות עם גוגל</button>
+</header>
+
+<main>
+  <aside>
+    <div class="setup">
+      <label>OAuth Client ID
+        <input id="clientId" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+      </label>
+      <label>Script ID
+        <input id="scriptId" placeholder="מזהה הפרויקט" autocomplete="off" spellcheck="false">
+      </label>
+      <button class="btn primary" id="btnLoad" disabled>טעינת הפרויקט</button>
+    </div>
+    <div class="files-head"><span>קבצים</span><button class="icon" id="btnNew" disabled style="color:var(--accent);font-weight:700">קובץ חדש</button></div>
+    <div class="files" id="files"></div>
+  </aside>
+
+  <section class="stage">
+    <div class="empty" id="empty">התחבר, הדבק את מזהה הסקריפט ולחץ על טעינת הפרויקט.<br>הקבצים יופיעו בצד ותוכל לערוך אותם ישירות.</div>
+    <div class="bar hide" id="bar">
+      <span class="title" id="curName"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="btnReload">טעינה מחדש</button>
+      <button class="btn primary" id="btnSave" disabled>שמירה ב-Apps Script</button>
+    </div>
+    <div class="editor hide" id="editor"><textarea id="code" spellcheck="false" aria-label="עורך קוד"></textarea></div>
+  </section>
+</main>
+
+<dialog id="dlgNew">
+  <h2>קובץ חדש</h2>
+  <input id="newName" placeholder="לדוגמה: utils.gs או index.html" autocomplete="off" spellcheck="false">
+  <div class="row">
+    <button class="btn primary" id="newOk">יצירה</button>
+    <button class="btn" id="newCancel">ביטול</button>
+  </div>
+</dialog>
+
+<script>
+(function(){
+  var SCOPE = 'https://www.googleapis.com/auth/script.projects';
+  var API = 'https://script.googleapis.com/v1/projects/';
+  var $ = function(id){ return document.getElementById(id); };
+  var token = null, tokenClient = null;
+  var files = [], current = -1, dirty = {}, structural = false;
+
+  $('clientId').value = localStorage.getItem('ase_client') || '';
+  $('scriptId').value = localStorage.getItem('ase_script') || '';
+
+  function status(msg, err){ var s = $('status'); s.textContent = msg; s.className = 'status' + (err ? ' err' : ''); }
+
+  function typeOf(name){
+    if (name === 'appsscript') return 'JSON';
+    return /\.html$/i.test(name) ? 'HTML' : 'SERVER_JS';
+  }
+  function displayName(f){
+    if (f.type === 'JSON') return f.name + '.json';
+    if (f.type === 'HTML') return f.name + '.html';
+    return f.name + '.gs';
+  }
+  function parseNewName(raw){
+    var n = raw.trim();
+    if (!n) return null;
+    if (/\.html$/i.test(n)) return { name: n.replace(/\.html$/i, ''), type: 'HTML' };
+    return { name: n.replace(/\.(gs|js)$/i, ''), type: 'SERVER_JS' };
+  }
+
+  function initClient(){
+    var id = $('clientId').value.trim();
+    if (!id || !window.google || !google.accounts) return false;
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: id,
+      scope: SCOPE,
+      callback: function(resp){
+        if (resp.error){ status('ההתחברות נכשלה: ' + resp.error, true); return; }
+        token = resp.access_token;
+        status('מחובר');
+        $('btnAuth').textContent = 'התחברות מחדש';
+        $('btnLoad').disabled = false;
+      }
+    });
+    return true;
+  }
+
+  $('btnAuth').onclick = function(){
+    var id = $('clientId').value.trim();
+    if (!id){ status('הזן OAuth Client ID', true); return; }
+    localStorage.setItem('ase_client', id);
+    if (!initClient()){ status('ספריית גוגל עדיין נטענת, נסה שוב בעוד רגע', true); return; }
+    tokenClient.requestAccessToken({ prompt: token ? '' : 'consent' });
+  };
+
+  function api(method, path, body){
+    return fetch(API + path, {
+      method: method,
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function(r){
+      return r.json().then(function(j){
+        if (!r.ok){
+          var m = (j.error && j.error.message) || ('שגיאה ' + r.status);
+          if (r.status === 403 && /Apps Script API/i.test(m)) m += '. יש להפעיל את Apps Script API ב-script.google.com/home/usersettings';
+          throw new Error(m);
+        }
+        return j;
+      });
+    });
+  }
+
+  function load(){
+    var sid = $('scriptId').value.trim();
+    if (!sid){ status('הזן Script ID', true); return; }
+    localStorage.setItem('ase_script', sid);
+    status('טוען...');
+    api('GET', encodeURIComponent(sid) + '/content').then(function(j){
+      files = (j.files || []).map(function(f){ return { name: f.name, type: f.type, source: f.source || '' }; });
+      dirty = {}; structural = false;
+      current = files.length ? 0 : -1;
+      render();
+      status('נטענו ' + files.length + ' קבצים');
+    }).catch(function(e){ status(e.message, true); });
+  }
+
+  function render(){
+    var box = $('files'); box.innerHTML = '';
+    files.forEach(function(f, i){
+      var row = document.createElement('div');
+      row.className = 'file' + (i === current ? ' active' : '') + (dirty[i] ? ' dirty' : '');
+      row.tabIndex = 0;
+      row.innerHTML = '<span class="dot"></span><span class="nm"></span>';
+      row.querySelector('.nm').textContent = displayName(f);
+      if (f.type !== 'JSON'){
+        var del = document.createElement('button');
+        del.className = 'icon'; del.textContent = 'מחיקה';
+        del.onclick = function(ev){ ev.stopPropagation(); removeFile(i); };
+        row.appendChild(del);
+      }
+      row.onclick = function(){ select(i); };
+      row.onkeydown = function(ev){ if (ev.key === 'Enter') select(i); };
+      box.appendChild(row);
+    });
+    var has = current >= 0;
+    $('empty').classList.toggle('hide', has);
+    $('bar').classList.toggle('hide', !has);
+    $('editor').classList.toggle('hide', !has);
+    $('btnNew').disabled = !token;
+    if (has){
+      $('curName').textContent = displayName(files[current]);
+      $('code').value = files[current].source;
+    }
+    updateSave();
+  }
+
+  function select(i){ current = i; render(); }
+  function updateSave(){ $('btnSave').disabled = !(structural || Object.keys(dirty).length); }
+
+  $('code').addEventListener('input', function(){
+    if (current < 0) return;
+    files[current].source = this.value;
+    dirty[current] = true;
+    var rows = $('files').children;
+    if (rows[current]) rows[current].classList.add('dirty');
+    updateSave();
+  });
+
+  $('code').addEventListener('keydown', function(e){
+    if (e.key === 'Tab'){
+      e.preventDefault();
+      var s = this.selectionStart, en = this.selectionEnd;
+      this.value = this.value.slice(0, s) + '  ' + this.value.slice(en);
+      this.selectionStart = this.selectionEnd = s + 2;
+      this.dispatchEvent(new Event('input'));
+    }
+  });
+
+  document.addEventListener('keydown', function(e){
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's'){
+      e.preventDefault();
+      if (!$('btnSave').disabled) save();
+    }
+  });
+
+  function save(){
+    var sid = $('scriptId').value.trim();
+    status('שומר...');
+    api('PUT', encodeURIComponent(sid) + '/content', {
+      files: files.map(function(f){ return { name: f.name, type: f.type, source: f.source }; })
+    }).then(function(){
+      dirty = {}; structural = false;
+      render();
+      status('נשמר ב-' + new Date().toLocaleTimeString('he-IL'));
+    }).catch(function(e){ status(e.message, true); });
+  }
+
+  function removeFile(i){
+    if (!confirm('למחוק את ' + displayName(files[i]) + '? המחיקה תיכנס לתוקף אחרי שמירה.')) return;
+    files.splice(i, 1);
+    var nd = {};
+    Object.keys(dirty).forEach(function(k){ k = +k; if (k < i) nd[k] = true; else if (k > i) nd[k - 1] = true; });
+    dirty = nd;
+    structural = true;
+    current = files.length ? Math.min(i, files.length - 1) : -1;
+    render();
+  }
+
+  $('btnNew').onclick = function(){ $('newName').value = ''; $('dlgNew').showModal(); $('newName').focus(); };
+  $('newCancel').onclick = function(){ $('dlgNew').close(); };
+  $('newOk').onclick = function(){
+    var p = parseNewName($('newName').value);
+    if (!p) return;
+    if (files.some(function(f){ return f.name === p.name; })){ alert('קובץ בשם הזה כבר קיים'); return; }
+    files.push({ name: p.name, type: p.type, source: '' });
+    current = files.length - 1;
+    dirty[current] = true; structural = true;
+    $('dlgNew').close();
+    render();
+    $('code').focus();
+  };
+  $('newName').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('newOk').click(); });
+
+  $('btnLoad').onclick = load;
+  $('btnReload').onclick = function(){
+    if ((structural || Object.keys(dirty).length) && !confirm('יש שינויים שלא נשמרו. לטעון מחדש ולאבד אותם?')) return;
+    load();
+  };
+  $('btnSave').onclick = save;
+
+  window.addEventListener('beforeunload', function(e){
+    if (structural || Object.keys(dirty).length){ e.preventDefault(); e.returnValue = ''; }
+  });
+})();
+</script>
+</body>
+</html>
