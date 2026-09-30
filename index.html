@@ -31,6 +31,9 @@ aside{width:290px;background:var(--surface);border-inline-end:1px solid var(--li
 .setup{padding:16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .setup label{font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:5px}
 .setup input{direction:ltr;text-align:left;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);font-family:'JetBrains Mono',monospace;font-size:12px}
+.info{font-size:12px;color:var(--muted);line-height:1.8;word-break:break-all}
+.info .v{color:var(--ink);direction:ltr;unicode-bidi:isolate;display:inline-block}
+.info .bad{color:var(--danger)}
 .files-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 6px;font-weight:700;font-size:13px;color:var(--muted)}
 .files{flex:1;overflow:auto;padding:4px 8px 12px}
 .file{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;border:0;background:none;width:100%;text-align:right}
@@ -86,6 +89,7 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
         <input id="scriptId" placeholder="מזהה הפרויקט" autocomplete="off" spellcheck="false">
       </label>
       <button class="btn primary" id="btnLoad" disabled>טעינת הפרויקט</button>
+      <div class="info" id="info"></div>
     </div>
     <div class="files-head"><span>קבצים</span><button class="icon" id="btnNew" disabled style="color:var(--accent);font-weight:700">קובץ חדש</button></div>
     <div class="files" id="files"></div>
@@ -129,7 +133,8 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
     'https://www.googleapis.com/auth/script.projects',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/script.external_request',
-    'https://www.googleapis.com/auth/script.scriptapp'
+    'https://www.googleapis.com/auth/script.scriptapp',
+    'https://www.googleapis.com/auth/userinfo.email'
   ].join(' ');
   var API = 'https://script.googleapis.com/v1/projects/';
   var $ = function(id){ return document.getElementById(id); };
@@ -138,6 +143,22 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
 
   $('clientId').value = localStorage.getItem('ase_client') || '';
   $('scriptId').value = localStorage.getItem('ase_script') || '';
+
+
+  var info = { me: '', owner: '', parent: '' };
+  function renderInfo(){
+    var box = $('info'); box.innerHTML = '';
+    function line(label, val, bad){
+      if (!val) return;
+      var d = document.createElement('div');
+      d.appendChild(document.createTextNode(label + ': '));
+      var s = document.createElement('span'); s.className = 'v' + (bad ? ' bad' : ''); s.textContent = val;
+      d.appendChild(s); box.appendChild(d);
+    }
+    line('מחובר בדף כ', info.me);
+    line('יוצר הסקריפט', info.owner, info.me && info.owner && info.me.toLowerCase() !== info.owner.toLowerCase());
+    line('מקושר לקובץ', info.parent);
+  }
 
   function status(msg, err){ var s = $('status'); s.textContent = msg; s.className = 'status' + (err ? ' err' : ''); }
 
@@ -170,6 +191,10 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
         $('btnAuth').textContent = 'התחברות מחדש';
         $('btnLoad').disabled = false;
         $('runpanel').classList.remove('hide');
+        fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { 'Authorization': 'Bearer ' + token } })
+          .then(function(r){ return r.json(); })
+          .then(function(u){ info.me = u.email || ''; renderInfo(); })
+          .catch(function(){});
       }
     });
     return true;
@@ -211,6 +236,11 @@ dialog input{width:100%;direction:ltr;text-align:left;border:1px solid var(--lin
       current = files.length ? 0 : -1;
       render();
       status('נטענו ' + files.length + ' קבצים');
+      api('GET', encodeURIComponent(sid)).then(function(m){
+        info.owner = (m.creator && m.creator.email) || '';
+        info.parent = m.parentId || 'עצמאי (לא מקושר לגיליון)';
+        renderInfo();
+      }).catch(function(){});
     }).catch(function(e){ status(e.message, true); });
   }
 
